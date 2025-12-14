@@ -1,0 +1,5 @@
+{
+  "name": "MAKE IT SIMPLE !",
+  "description": "A minimalist 3D character selection menu powered by Three.js and Gemini 2.5.",
+  "requestFramePermissions": []
+}
