@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CharacterClass, GeneratedLore } from "../types";
 
 // Initialize the client.
@@ -48,5 +48,35 @@ export const generateCharacterLore = async (characterClass: CharacterClass): Pro
       story: "The archives are incomplete. Connection to the neural net failed.",
       quote: "Error... System... Failure..."
     };
+  }
+};
+
+export const generateCharacterSpeech = async (text: string, characterClass: CharacterClass): Promise<string | null> => {
+  if (!apiKey) return null;
+
+  try {
+    // Select voice based on class for personality
+    let voiceName = 'Kore'; // Default Female
+    if (characterClass === CharacterClass.WARRIOR) voiceName = 'Fenrir'; // Deep, strong
+    if (characterClass === CharacterClass.ROGUE) voiceName = 'Puck'; // Mid-range
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName }
+            },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    return base64Audio || null;
+  } catch (error) {
+    console.error("Gemini TTS Error:", error);
+    return null;
   }
 };

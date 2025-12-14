@@ -4,7 +4,8 @@ import { ContactShadows, OrbitControls, PerspectiveCamera, Sparkles, Grid } from
 import { CharacterClass, CharacterData, GeneratedLore } from './types';
 import CharacterModel from './components/CharacterModel';
 import Interface from './components/Interface';
-import { generateCharacterLore } from './services/geminiService';
+import { generateCharacterLore, generateCharacterSpeech } from './services/geminiService';
+import { audioService } from './services/audioService';
 
 // Character Definitions - Cyberpunk Palette
 const CHARACTERS: CharacterData[] = [
@@ -50,15 +51,24 @@ const App: React.FC<AppProps> = ({ enableAuth }) => {
     setLoadingLore(true);
   };
 
-  // Fetch AI content when selection changes
+  // Fetch AI content (Lore + Speech) when selection changes
   useEffect(() => {
     if (selectedId) {
-      const fetchLore = async () => {
+      const fetchLoreAndSpeech = async () => {
+        // 1. Get Text Lore
         const data = await generateCharacterLore(selectedId);
         setLore(data);
         setLoadingLore(false);
+
+        // 2. Get Speech (TTS) for the Quote
+        if (data && data.quote) {
+            const audioData = await generateCharacterSpeech(data.quote, selectedId);
+            if (audioData) {
+                audioService.playPCMData(audioData);
+            }
+        }
       };
-      fetchLore();
+      fetchLoreAndSpeech();
     } else {
         setLore(null);
     }

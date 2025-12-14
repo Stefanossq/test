@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CharacterData, GeneratedLore } from '../types';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
+import { audioService } from '../services/audioService';
 
 interface InterfaceProps {
   selectedChar: CharacterData | null;
@@ -48,15 +49,18 @@ const Interface: React.FC<InterfaceProps> = ({ selectedChar, lore, loadingLore, 
   const handleInitialize = () => {
     if (status !== 'idle') return;
     
+    // Play sharp click immediately
+    audioService.playClickSound();
+    
     setStatus('loading');
     
     // Start progress animation
-    // Small delay to ensure render phase catches the 0 -> 100 transition
     setTimeout(() => setProgress(100), 50);
 
     // Complete after 1.5s
     setTimeout(() => {
       setStatus('success');
+      audioService.playSuccessSound(); // Short pleasant chime
       // Trigger actual confirm after a brief success message
       setTimeout(() => {
         onConfirm();
@@ -90,7 +94,10 @@ const Interface: React.FC<InterfaceProps> = ({ selectedChar, lore, loadingLore, 
           <div className="bg-cyber-black/80 backdrop-blur-sm p-3 border border-cyber-cyan/30 clip-path-polygon">
              <SignedOut>
                 <SignInButton mode="modal">
-                  <button className="px-6 py-2 bg-cyber-cyan/10 text-cyber-cyan border border-cyber-cyan hover:bg-cyber-cyan hover:text-black transition-all font-mono text-xs font-bold uppercase tracking-wider">
+                  <button 
+                    className="px-6 py-2 bg-cyber-cyan/10 text-cyber-cyan border border-cyber-cyan hover:bg-cyber-cyan hover:text-black transition-all font-mono text-xs font-bold uppercase tracking-wider"
+                    onClick={() => audioService.playClickSound()}
+                  >
                     [ ACCESS TERMINAL ]
                   </button>
                 </SignInButton>
@@ -114,7 +121,7 @@ const Interface: React.FC<InterfaceProps> = ({ selectedChar, lore, loadingLore, 
                <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyber-pink to-transparent"></div>
                
                {/* Scanline Effect */}
-               <div className="absolute inset-0 bg-[url('https://media.istockphoto.com/id/1155985012/vector/scanlines-pattern.jpg?s=612x612&w=0&k=20&c=6b4qXlG8yR-i_xZ7G_L-m_x-y-m_x-y-m_x-y-m_x')] opacity-5 pointer-events-none mix-blend-overlay"></div>
+               <div className="absolute inset-0 bg-[url('https://media.istockphoto.com/id/1155985012/vector/scanlines-pattern.jpg?s=612x612&w=0&k=20&c=6b4qXlG8yR-i_xZ7G_L-m_x-y-m_x-y-m_x-y-m_x-y-m_x')] opacity-5 pointer-events-none mix-blend-overlay"></div>
 
               {/* Class Title */}
               <div className="mb-8 flex items-end gap-4 border-b border-white/10 pb-4">

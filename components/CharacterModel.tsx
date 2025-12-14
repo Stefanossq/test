@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { MeshDistortMaterial, Text, Float, Trail, useCursor } from '@react-three/drei';
+import { MeshDistortMaterial, Text, Float, Trail, useCursor, Instance, Instances, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { CharacterData } from '../types';
+import { audioService } from '../services/audioService';
 
 interface CharacterModelProps {
   data: CharacterData;
@@ -12,665 +13,443 @@ interface CharacterModelProps {
 
 const CharacterModel: React.FC<CharacterModelProps> = ({ data, isSelected, onSelect }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const [hovered, setHovered] = useState(false);
   
-  // Change cursor on hover
+  // Animation Refs
+  const warriorVisorRef = useRef<THREE.MeshBasicMaterial>(null);
+  const mageCoreRef = useRef<THREE.MeshStandardMaterial>(null);
+  const rogueBladeRef1 = useRef<THREE.MeshBasicMaterial>(null);
+  const rogueBladeRef2 = useRef<THREE.MeshBasicMaterial>(null);
+
+  const [hovered, setHovered] = useState(false);
   useCursor(hovered);
 
-  // Animation logic
+  // Animation Loop
   useFrame((state) => {
     if (!groupRef.current) return;
-    
     const time = state.clock.getElapsedTime();
 
-    // Distinct idle animations based on class
+    // Specific Class Idles
     switch (data.id) {
       case 'WARRIOR':
-        // Heavy breathing, grounded
-        groupRef.current.position.y = Math.sin(time * 1) * 0.02;
-        groupRef.current.rotation.y = Math.sin(time * 0.5) * 0.05;
+        // Heavy, grounded breathing
+        groupRef.current.position.y = Math.sin(time * 0.8) * 0.03;
+        // Subtle shoulder sway
+        groupRef.current.rotation.y = Math.sin(time * 0.4) * 0.05;
+        // Pulse Visor
+        if (warriorVisorRef.current) {
+            warriorVisorRef.current.opacity = 0.6 + Math.sin(time * 3) * 0.4;
+        }
         break;
       case 'MAGE':
-        // Floating sine wave
-        groupRef.current.position.y = Math.sin(time * 1.5) * 0.1 + 0.2;
+        // Ethereal floating
+        groupRef.current.position.y = Math.sin(time * 1.2) * 0.15 + 0.3;
+        groupRef.current.rotation.z = Math.sin(time * 0.5) * 0.05;
+        // Pulse Core
+        if (mageCoreRef.current) {
+            mageCoreRef.current.emissiveIntensity = 1.5 + Math.sin(time * 2.5) * 1;
+        }
         break;
       case 'ROGUE':
-        // Twitchy, ready to sprint
-        groupRef.current.position.y = Math.sin(time * 3) * 0.05;
-        groupRef.current.rotation.x = 0.05 + Math.sin(time * 4) * 0.02;
-        break;
-      default:
+        // Twitchy, ready to strike
+        groupRef.current.position.y = Math.sin(time * 2.5) * 0.04;
+        groupRef.current.rotation.x = 0.1 + Math.sin(time * 4) * 0.02;
+        // Energy blade noise
+        const flicker = 0.5 + Math.random() * 0.5;
+        if (rogueBladeRef1.current) rogueBladeRef1.current.opacity = flicker;
+        if (rogueBladeRef2.current) rogueBladeRef2.current.opacity = flicker;
         break;
     }
 
-    // Interactive Scale
-    const targetScale = isSelected ? 1.3 : hovered ? 1.15 : 1;
+    // Selection Scale & Hover Effect
+    const targetScale = isSelected ? 1.25 : hovered ? 1.1 : 1;
     groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
   });
 
   // --- MATERIALS ---
-  const MainMaterial = ({ distort = 0.3 }: {distort?: number}) => (
-    <MeshDistortMaterial
-      color={data.color}
-      emissive={data.color}
-      emissiveIntensity={isSelected ? 0.8 : 0.4}
-      distort={isSelected ? distort : 0}
-      speed={4}
-      roughness={0.2}
-      metalness={0.8}
-    />
+  const ArmorMat = ({ color = "#1a1a1a", roughness = 0.4, metalness = 0.8 }) => (
+    <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} />
   );
 
-  const ArmorMaterial = ({ color = "#111111" }) => (
-    <meshStandardMaterial color={color} roughness={0.3} metalness={0.9} />
+  const TechDetailMat = ({ color = "#333" }) => (
+    <meshStandardMaterial color={color} roughness={0.2} metalness={0.9} />
   );
 
-  const SkinMaterial = () => (
-    <meshStandardMaterial color="#222" roughness={0.5} metalness={0.4} />
+  const GlowMat = React.forwardRef(({ color, intensity = 1 }: {color?: string, intensity?: number}, ref: any) => (
+    <meshBasicMaterial ref={ref} color={color || data.color} transparent opacity={intensity} toneMapped={false} />
+  ));
+
+  const FabricMat = ({ color = "#111" }) => (
+    <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} side={THREE.DoubleSide} />
   );
 
-  const GlowMaterial = ({ intensity = 1, color }: { intensity?: number, color?: string }) => (
-    <meshBasicMaterial color={color || data.color} toneMapped={false} opacity={intensity} transparent />
-  );
-  
-  const JointMaterial = () => (
-    <meshStandardMaterial color="#1a1a1a" roughness={0.7} metalness={0.5} />
-  );
-
-  // --- GEOMETRY BUILDERS ---
-
-  const renderWarrior = () => (
-    <group position={[0, 0.9, 0]}>
-      {/* --- HEAD --- */}
-      <group position={[0, 0.95, 0]}>
-        {/* Helmet Base */}
+  // --- WARRIOR GEOMETRY ---
+  const RenderWarrior = () => (
+    <group position={[0, 0.85, 0]}>
+      {/* Head */}
+      <group position={[0, 1.0, 0]}>
         <mesh castShadow>
-          <boxGeometry args={[0.3, 0.35, 0.35]} />
-          <ArmorMaterial color="#222" />
+           <boxGeometry args={[0.32, 0.35, 0.38]} />
+           <ArmorMat color="#222" metalness={0.9} />
         </mesh>
-         {/* Faceplate */}
-        <mesh position={[0, 0, 0.18]}>
-           <boxGeometry args={[0.26, 0.25, 0.05]} />
-           <ArmorMaterial color="#444" />
+        {/* Jaw Guard */}
+        <mesh position={[0, -0.15, 0.15]}>
+           <boxGeometry args={[0.36, 0.15, 0.2]} />
+           <ArmorMat color="#333" />
         </mesh>
-        {/* Glowing Visor Slit (V shape simulated by 2 boxes) */}
-        <group position={[0, -0.02, 0.22]}>
-             <mesh position={[0, 0, 0]}>
-                <boxGeometry args={[0.22, 0.03, 0.02]} />
-                <GlowMaterial intensity={1.5} />
-             </mesh>
-             <mesh position={[0, 0.05, 0]} rotation={[0,0,0.2]}>
-                 <boxGeometry args={[0.1, 0.02, 0.02]} />
-                 <GlowMaterial intensity={1} />
-             </mesh>
-              <mesh position={[0, 0.05, 0]} rotation={[0,0,-0.2]}>
-                 <boxGeometry args={[0.1, 0.02, 0.02]} />
-                 <GlowMaterial intensity={1} />
-             </mesh>
-        </group>
-        {/* Side Vents */}
-        <mesh position={[0.18, 0, 0]}>
-           <boxGeometry args={[0.05, 0.2, 0.2]} />
-           <MainMaterial />
+        {/* Glowing Visor */}
+        <mesh position={[0, 0.05, 0.18]}>
+           <boxGeometry args={[0.25, 0.08, 0.05]} />
+           <GlowMat ref={warriorVisorRef} intensity={1} />
         </mesh>
-        <mesh position={[-0.18, 0, 0]}>
-           <boxGeometry args={[0.05, 0.2, 0.2]} />
-           <MainMaterial />
-        </mesh>
-        {/* Crest */}
-        <mesh position={[0, 0.25, -0.05]} rotation={[-0.2, 0, 0]}>
-           <boxGeometry args={[0.08, 0.2, 0.3]} />
-           <MainMaterial />
+        {/* Antennae */}
+        <mesh position={[0.18, 0.1, 0]} rotation={[0, 0, -0.3]}>
+            <cylinderGeometry args={[0.01, 0.01, 0.3]} />
+            <TechDetailMat />
         </mesh>
       </group>
 
-      {/* --- TORSO --- */}
+      {/* Heavy Torso */}
       <group position={[0, 0.35, 0]}>
-         {/* Core Body */}
          <mesh castShadow>
-           <boxGeometry args={[0.55, 0.7, 0.35]} />
-           <SkinMaterial />
+            <cylinderGeometry args={[0.25, 0.2, 0.7, 6]} />
+            <ArmorMat color="#151515" />
          </mesh>
-         {/* Heavy Chest Plate */}
-         <mesh position={[0, 0.15, 0.2]} castShadow>
-            <boxGeometry args={[0.6, 0.35, 0.1]} />
-            <ArmorMaterial />
+         {/* Chest Plate Layers */}
+         <mesh position={[0, 0.2, 0.15]} rotation={[-0.1, 0, 0]}>
+            <boxGeometry args={[0.5, 0.35, 0.15]} />
+            <ArmorMat color="#333" />
          </mesh>
-         {/* Arc Reactor */}
-         <mesh position={[0, 0.2, 0.26]}>
-            <cylinderGeometry args={[0.08, 0.08, 0.05, 16]} rotation={[Math.PI/2, 0, 0]} />
-            <GlowMaterial intensity={2} />
+         <mesh position={[0, -0.1, 0.12]} rotation={[0.1, 0, 0]}>
+            <boxGeometry args={[0.4, 0.25, 0.1]} />
+            <ArmorMat color="#222" />
          </mesh>
-         {/* Abs Plating */}
-         <mesh position={[0, -0.15, 0.18]}>
-             <boxGeometry args={[0.4, 0.2, 0.05]} />
-             <ArmorMaterial color="#333" />
-         </mesh>
-         {/* Back Power Unit */}
+         {/* Back Reactor Unit */}
          <mesh position={[0, 0.2, -0.2]}>
-             <boxGeometry args={[0.4, 0.5, 0.15]} />
-             <ArmorMaterial color="#111" />
+             <boxGeometry args={[0.4, 0.5, 0.2]} />
+             <ArmorMat color="#111" />
+         </mesh>
+         {/* Reactor Glow */}
+         <mesh position={[0, 0.3, -0.31]}>
+             <ringGeometry args={[0.05, 0.08, 16]} />
+             <meshBasicMaterial color={data.color} toneMapped={false} />
          </mesh>
       </group>
 
-      {/* --- SHOULDERS --- */}
+      {/* Big Pauldrons with Spikes */}
       <group position={[0, 0.65, 0]}>
-        <group position={[-0.45, 0, 0]}>
-           <mesh castShadow>
-             <boxGeometry args={[0.4, 0.35, 0.4]} />
-             <ArmorMaterial />
-           </mesh>
-           <mesh position={[0, 0.2, 0]}>
-              <boxGeometry args={[0.3, 0.1, 0.3]} />
-              <MainMaterial />
-           </mesh>
-        </group>
-         <group position={[0.45, 0, 0]}>
-           <mesh castShadow>
-             <boxGeometry args={[0.4, 0.35, 0.4]} />
-             <ArmorMaterial />
-           </mesh>
-           <mesh position={[0, 0.2, 0]}>
-              <boxGeometry args={[0.3, 0.1, 0.3]} />
-              <MainMaterial />
-           </mesh>
-        </group>
+         {[-1, 1].map((side) => (
+             <group key={side} position={[side * 0.45, 0.1, 0]}>
+                 <mesh castShadow>
+                    <boxGeometry args={[0.4, 0.45, 0.45]} />
+                    <ArmorMat color="#2a2a2a" />
+                 </mesh>
+                 {/* Spikes */}
+                 <mesh position={[0, 0.25, 0]}>
+                    <coneGeometry args={[0.08, 0.3, 8]} />
+                    <TechDetailMat color="#555" />
+                 </mesh>
+             </group>
+         ))}
       </group>
 
-      {/* --- ARMS --- */}
-      <group position={[0, 0.6, 0]}>
-        {/* Left Arm */}
-        <group position={[-0.55, -0.2, 0]}>
-            <mesh position={[0, 0.15, 0]}>
-               <sphereGeometry args={[0.12]} />
-               <JointMaterial />
+      {/* Hydraulic Arms */}
+      {[ -1, 1 ].map((side) => (
+         <group key={side} position={[side * 0.6, 0.5, 0]}>
+            {/* Shoulder Joint */}
+            <mesh>
+               <sphereGeometry args={[0.15]} />
+               <TechDetailMat />
             </mesh>
-            <mesh position={[0, -0.1, 0]} castShadow>
-                <cylinderGeometry args={[0.1, 0.09, 0.4]} />
-                <SkinMaterial />
+            {/* Upper Arm Piston */}
+            <group position={[0, -0.3, 0]}>
+               <mesh>
+                  <cylinderGeometry args={[0.08, 0.08, 0.4]} />
+                  <ArmorMat color="#111" />
+               </mesh>
+               {/* Hydraulic Rod */}
+               <mesh position={[side * 0.12, 0, 0]}>
+                  <cylinderGeometry args={[0.02, 0.02, 0.35]} />
+                  <meshStandardMaterial color="#888" metalness={1} roughness={0.2} />
+               </mesh>
+            </group>
+            {/* Forearm Gauntlet */}
+            <mesh position={[0, -0.65, 0]} castShadow>
+               <boxGeometry args={[0.25, 0.35, 0.25]} />
+               <ArmorMat color="#333" />
             </mesh>
-            <mesh position={[0, -0.4, 0]} castShadow>
-                <boxGeometry args={[0.22, 0.3, 0.22]} />
-                <ArmorMaterial />
-            </mesh>
-             {/* Glowing Strip */}
-             <mesh position={[-0.12, -0.4, 0]}>
-                <boxGeometry args={[0.02, 0.2, 0.05]} />
-                <GlowMaterial />
-             </mesh>
-             {/* Hand */}
-             <mesh position={[0, -0.65, 0]}>
-                <boxGeometry args={[0.15, 0.15, 0.15]} />
-                <ArmorMaterial />
-             </mesh>
-        </group>
-        
-        {/* Right Arm */}
-        <group position={[0.55, -0.2, 0]}>
-             <mesh position={[0, 0.15, 0]}>
-               <sphereGeometry args={[0.12]} />
-               <JointMaterial />
-            </mesh>
-            <mesh position={[0, -0.1, 0]} castShadow>
-                <cylinderGeometry args={[0.1, 0.09, 0.4]} />
-                <SkinMaterial />
-            </mesh>
-            <mesh position={[0, -0.4, 0]} castShadow>
-                <boxGeometry args={[0.22, 0.3, 0.22]} />
-                <ArmorMaterial />
-            </mesh>
-             {/* Glowing Strip */}
-             <mesh position={[0.12, -0.4, 0]}>
-                <boxGeometry args={[0.02, 0.2, 0.05]} />
-                <GlowMaterial />
-             </mesh>
             {/* Hand */}
-             <mesh position={[0, -0.65, 0]}>
-                <boxGeometry args={[0.15, 0.15, 0.15]} />
-                <ArmorMaterial />
-             </mesh>
-        </group>
-      </group>
+            <mesh position={[0, -0.9, 0]}>
+               <boxGeometry args={[0.15, 0.15, 0.15]} />
+               <TechDetailMat />
+            </mesh>
+         </group>
+      ))}
 
-      {/* --- LEGS --- */}
+      {/* Legs with Servos */}
       <group position={[0, -0.6, 0]}>
-         {/* Hip Joint Area */}
-         <mesh position={[0, 0.5, 0]}>
-             <boxGeometry args={[0.5, 0.2, 0.3]} />
-             <SkinMaterial />
-         </mesh>
-
-         {/* Left Leg */}
-         <group position={[-0.25, 0, 0]}>
-            <mesh position={[0, 0.3, 0]}>
-               <cylinderGeometry args={[0.15, 0.12, 0.4]} />
-               <SkinMaterial />
-            </mesh>
-            <mesh position={[0, 0.3, 0.16]}>
-               <boxGeometry args={[0.2, 0.3, 0.05]} />
-               <ArmorMaterial />
-            </mesh>
-            <mesh position={[0, 0, 0]}>
-               <sphereGeometry args={[0.14]} />
-               <JointMaterial />
-            </mesh>
-            <mesh position={[0, -0.35, 0]} castShadow>
-               <boxGeometry args={[0.22, 0.5, 0.25]} />
-               <ArmorMaterial />
-            </mesh>
-             <mesh position={[0, -0.65, 0.05]} castShadow>
-               <boxGeometry args={[0.24, 0.15, 0.35]} />
-               <ArmorMaterial color="#111" />
-            </mesh>
-         </group>
-
-         {/* Right Leg */}
-         <group position={[0.25, 0, 0]}>
-            <mesh position={[0, 0.3, 0]}>
-               <cylinderGeometry args={[0.15, 0.12, 0.4]} />
-               <SkinMaterial />
-            </mesh>
-            <mesh position={[0, 0.3, 0.16]}>
-               <boxGeometry args={[0.2, 0.3, 0.05]} />
-               <ArmorMaterial />
-            </mesh>
-            <mesh position={[0, 0, 0]}>
-               <sphereGeometry args={[0.14]} />
-               <JointMaterial />
-            </mesh>
-            <mesh position={[0, -0.35, 0]} castShadow>
-               <boxGeometry args={[0.22, 0.5, 0.25]} />
-               <ArmorMaterial />
-            </mesh>
-             <mesh position={[0, -0.65, 0.05]} castShadow>
-               <boxGeometry args={[0.24, 0.15, 0.35]} />
-               <ArmorMaterial color="#111" />
-            </mesh>
-         </group>
+         {[-1, 1].map((side) => (
+            <group key={side} position={[side * 0.25, 0, 0]}>
+               {/* Thigh */}
+               <mesh position={[0, 0.2, 0]}>
+                  <cylinderGeometry args={[0.14, 0.12, 0.5]} />
+                  <ArmorMat />
+               </mesh>
+               {/* Knee Pad */}
+               <mesh position={[0, -0.1, 0.15]} rotation={[-0.2, 0, 0]}>
+                  <boxGeometry args={[0.18, 0.2, 0.05]} />
+                  <TechDetailMat />
+               </mesh>
+               {/* Shin */}
+               <mesh position={[0, -0.4, 0]} castShadow>
+                  <boxGeometry args={[0.22, 0.5, 0.25]} />
+                  <ArmorMat color="#222" />
+               </mesh>
+               {/* Boot */}
+               <mesh position={[0, -0.7, 0.1]} castShadow>
+                  <boxGeometry args={[0.24, 0.15, 0.4]} />
+                  <ArmorMat color="#111" />
+               </mesh>
+            </group>
+         ))}
       </group>
 
-      {/* --- WEAPON: ULTRA GREATSWORD --- */}
-      <group position={[0.7, 0.2, 0.2]} rotation={[0.2, 0, -0.4]}>
-         {/* Main Blade Body */}
-         <mesh castShadow position={[0, 0.3, 0]}>
-           <boxGeometry args={[0.12, 1.6, 0.3]} />
-           <ArmorMaterial color="#1a1a1a" />
+      {/* Weapon: Buster Blade */}
+      <group position={[0.8, -0.2, 0.4]} rotation={[0, 0, -0.2]}>
+         <mesh position={[0, 0.5, 0]}>
+            <boxGeometry args={[0.1, 1.4, 0.35]} />
+            <ArmorMat color="#111" roughness={0.2} />
          </mesh>
-         {/* Cutting Edge */}
-         <mesh position={[0, 0.3, 0.16]}>
-            <boxGeometry args={[0.04, 1.5, 0.05]} />
-            <GlowMaterial intensity={1.5} />
+         {/* Glowing Edge */}
+         <mesh position={[0, 0.5, 0.2]}>
+            <boxGeometry args={[0.02, 1.35, 0.05]} />
+            <GlowMat intensity={2} />
          </mesh>
-         {/* Tech details on blade */}
-         <mesh position={[0.07, 0.6, 0]}>
-             <boxGeometry args={[0.02, 0.3, 0.1]} />
-             <MainMaterial />
-         </mesh>
-          <mesh position={[-0.07, 0.6, 0]}>
-             <boxGeometry args={[0.02, 0.3, 0.1]} />
-             <MainMaterial />
-         </mesh>
-         {/* Guard */}
-         <mesh position={[0, -0.6, 0]}>
-            <boxGeometry args={[0.2, 0.1, 0.4]} />
-            <ArmorMaterial color="#333" />
-         </mesh>
-         {/* Handle */}
-         <mesh position={[0, -0.9, 0]}>
-            <cylinderGeometry args={[0.035, 0.035, 0.5]} />
-            <SkinMaterial />
-         </mesh>
-         {/* Pommel */}
-         <mesh position={[0, -1.15, 0]}>
-            <sphereGeometry args={[0.06]} />
-            <ArmorMaterial />
+         <mesh position={[0, -0.4, 0]}>
+            <cylinderGeometry args={[0.04, 0.04, 0.6]} />
+            <TechDetailMat />
          </mesh>
       </group>
     </group>
   );
 
-  const renderMage = () => (
-    <group position={[0, 0.8, 0]}>
-       <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-        {/* --- HEAD --- */}
-        <group position={[0, 1.05, 0]}>
-           {/* Hood/Helmet */}
-          <mesh castShadow>
-              <dodecahedronGeometry args={[0.22]} />
-              <ArmorMaterial color="#222" />
-          </mesh>
-          {/* Face Area - Void */}
-           <mesh position={[0, 0, 0.15]}>
-              <sphereGeometry args={[0.15]} />
-              <meshBasicMaterial color="#000" />
-          </mesh>
-          {/* Glowing Eyes */}
-          <group position={[0, 0, 0.22]}>
-              <mesh position={[-0.06, 0.02, 0]}>
-                  <sphereGeometry args={[0.025]} />
-                  <GlowMaterial intensity={2} />
-              </mesh>
-               <mesh position={[0.06, 0.02, 0]}>
-                  <sphereGeometry args={[0.025]} />
-                  <GlowMaterial intensity={2} />
-              </mesh>
-          </group>
-          {/* Halo Ring */}
-          <mesh rotation={[Math.PI/2, 0, 0]} position={[0, 0.15, 0]}>
-             <torusGeometry args={[0.3, 0.005, 8, 32]} />
-             <GlowMaterial intensity={0.5} />
-          </mesh>
-        </group>
+  // --- MAGE GEOMETRY ---
+  const RenderMage = () => (
+    <group position={[0, 0.9, 0]}>
+      <Float speed={2} rotationIntensity={0.2} floatIntensity={0.5}>
+         {/* Core Body (Floating Segments) */}
+         <group>
+            {/* Chest */}
+            <mesh position={[0, 0.4, 0]} castShadow>
+               <cylinderGeometry args={[0.15, 0.2, 0.4, 6]} />
+               <FabricMat color="#222" />
+            </mesh>
+            {/* Floating Rune Plates around chest */}
+            {[0, 1, 2].map((i) => (
+                <mesh key={i} position={[Math.cos(i*2)*0.4, 0.4, Math.sin(i*2)*0.4]} rotation={[0, i*2, 0]}>
+                   <planeGeometry args={[0.15, 0.3]} />
+                   <meshBasicMaterial color={data.color} side={THREE.DoubleSide} transparent opacity={0.4} />
+                </mesh>
+            ))}
+         </group>
 
-        {/* --- BODY --- */}
-        <group position={[0, 0.3, 0]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.1, 0.35, 0.8, 8]} />
-            <SkinMaterial />
-          </mesh>
-          {/* Armor Chest */}
-          <mesh position={[0, 0.1, 0]}>
-             <cylinderGeometry args={[0.16, 0.25, 0.4, 6]} />
-             <ArmorMaterial />
-          </mesh>
-          {/* Glowing Rune */}
-           <mesh position={[0, 0.15, 0.2]}>
-               <octahedronGeometry args={[0.06]} />
-               <MainMaterial />
-           </mesh>
-          
-          {/* Floating Pauldrons */}
-          <group position={[0, 0.3, 0]}>
-             <mesh position={[-0.35, 0.1, 0]} rotation={[0, 0, 0.3]}>
-                <boxGeometry args={[0.25, 0.3, 0.25]} />
-                <MainMaterial />
-             </mesh>
-              <mesh position={[0.35, 0.1, 0]} rotation={[0, 0, -0.3]}>
-                <boxGeometry args={[0.25, 0.3, 0.25]} />
-                <MainMaterial />
-             </mesh>
-          </group>
-        </group>
+         {/* Head Area */}
+         <group position={[0, 0.9, 0]}>
+             {/* Void Hood */}
+            <mesh castShadow>
+               <coneGeometry args={[0.25, 0.5, 8, 1, true]} />
+               <FabricMat color="#111" />
+            </mesh>
+            {/* Void Face */}
+            <mesh position={[0, -0.1, 0.05]}>
+                <sphereGeometry args={[0.15]} />
+                <meshBasicMaterial color="#000" />
+            </mesh>
+            {/* Glowing Eyes */}
+            <mesh position={[-0.06, -0.08, 0.18]}>
+               <sphereGeometry args={[0.02]} />
+               <GlowMat intensity={2} />
+            </mesh>
+            <mesh position={[0.06, -0.08, 0.18]}>
+               <sphereGeometry args={[0.02]} />
+               <GlowMat intensity={2} />
+            </mesh>
+         </group>
 
-        {/* --- ROBES / LEGS --- */}
-        <group position={[0, -0.5, 0]}>
-           {/* Inner Leg hints */}
-           <mesh position={[-0.1, 0, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 0.6]} />
-              <SkinMaterial />
-           </mesh>
-           <mesh position={[0.1, 0, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 0.6]} />
-              <SkinMaterial />
-           </mesh>
+         {/* Flowing Robes */}
+         <group position={[0, -0.4, 0]}>
+            <mesh castShadow>
+               <cylinderGeometry args={[0.2, 0.5, 1.0, 8, 1, true]} />
+               <FabricMat color="#1a1a1a" />
+            </mesh>
+            {/* Glowing Hem */}
+            <mesh position={[0, -0.5, 0]} rotation={[Math.PI/2, 0, 0]}>
+               <torusGeometry args={[0.5, 0.02, 8, 32]} />
+               <GlowMat intensity={0.8} />
+            </mesh>
+         </group>
 
-           {/* Robe Layers */}
-           <mesh castShadow>
-             <cylinderGeometry args={[0.35, 0.6, 0.9, 7]} openEnded />
-             <ArmorMaterial color="#1a1a1a" />
-           </mesh>
-           {/* Front Flap */}
-           <mesh position={[0, 0, 0.4]} rotation={[-0.1, 0, 0]}>
-              <boxGeometry args={[0.3, 0.9, 0.02]} />
-              <MainMaterial />
-           </mesh>
-           
-           {/* Glowing Bottom Ring */}
-           <mesh position={[0, -0.45, 0]} rotation={[Math.PI/2, 0, 0]}>
-             <torusGeometry args={[0.6, 0.01, 8, 40]} />
-             <GlowMaterial intensity={1} />
-           </mesh>
-        </group>
-
-        {/* --- STAFF --- */}
-        <group position={[-0.65, 0.2, 0.3]} rotation={[0.1, 0, -0.1]}>
-           <mesh>
-             <cylinderGeometry args={[0.025, 0.02, 2.4]} />
-             <meshStandardMaterial color="#444" roughness={0.5} />
-           </mesh>
-           {/* Tech grips */}
-           <mesh position={[0, 0, 0]}>
-              <cylinderGeometry args={[0.035, 0.035, 0.4]} />
-              <MainMaterial />
-           </mesh>
-           
-           {/* Staff Head */}
-           <group position={[0, 1.2, 0]}>
-             {/* Floating Core */}
+         {/* Staff */}
+         <group position={[-0.7, 0.2, 0.2]} rotation={[0, 0, 0.1]}>
              <mesh>
-               <octahedronGeometry args={[0.12]} />
-               <GlowMaterial intensity={2} />
+                <cylinderGeometry args={[0.02, 0.02, 2.2]} />
+                <TechDetailMat color="#444" />
              </mesh>
-             {/* Orbiting rings */}
-             <group rotation={[0.5, 0, 0]}>
-               <mesh rotation={[0, 0.5, 0]}>
-                   <torusGeometry args={[0.25, 0.01, 8, 24]} />
-                   <MainMaterial distort={0} />
-               </mesh>
+             {/* Magical Core */}
+             <group position={[0, 1.1, 0]}>
+                 <mesh>
+                    <torusKnotGeometry args={[0.08, 0.02, 64, 8]} />
+                    <meshStandardMaterial ref={mageCoreRef} color={data.color} emissive={data.color} />
+                 </mesh>
+                 <Sparkles count={20} scale={0.5} size={2} color={data.color} speed={0.4} />
              </group>
-             <group rotation={[-0.5, 0, 0]}>
-               <mesh rotation={[0, -0.5, 0]}>
-                   <torusGeometry args={[0.2, 0.01, 8, 24]} />
-                   <MainMaterial distort={0} />
-               </mesh>
-             </group>
-           </group>
-        </group>
+         </group>
 
-        {/* --- BACK CRYSTALS --- */}
-        <group position={[0, 0.5, -0.3]}>
-           {[...Array(3)].map((_, i) => (
-             <mesh key={i} position={[Math.sin(i*2)*0.4, i*0.2, 0]} rotation={[i, i, 0]}>
-                <octahedronGeometry args={[0.08]} />
-                <MainMaterial />
-             </mesh>
-           ))}
-        </group>
+         {/* Back Crystals */}
+         <group position={[0, 0.5, -0.2]}>
+             {[...Array(5)].map((_, i) => (
+                <mesh key={i} position={[Math.sin(i)*0.4, i*0.15, -0.1]} rotation={[i, 0, 0]}>
+                   <octahedronGeometry args={[0.06]} />
+                   <GlowMat intensity={0.5} />
+                </mesh>
+             ))}
+         </group>
       </Float>
     </group>
   );
 
-  const renderRogue = () => (
-    <group position={[0, 0.8, 0]}>
-      {/* --- HEAD --- */}
-      <group position={[0, 0.9, 0]}>
-         {/* Hood/Helmet */}
-         <mesh castShadow>
-            <capsuleGeometry args={[0.19, 0.25, 4, 12]} />
-            <ArmorMaterial color="#222" />
-         </mesh>
-         {/* Cyber Eye Implant */}
-         <group position={[0.09, 0.05, 0.17]}>
-             <mesh rotation={[Math.PI/2, 0, 0]}>
-                <cylinderGeometry args={[0.05, 0.05, 0.05]} />
-                <ArmorMaterial color="#111" />
-             </mesh>
-             <mesh position={[0, 0, 0.03]}>
-                <circleGeometry args={[0.03, 16]} />
-                <GlowMaterial intensity={2} />
-             </mesh>
-         </group>
-          <group position={[-0.09, 0.05, 0.17]}>
-             <mesh rotation={[Math.PI/2, 0, 0]}>
-                <cylinderGeometry args={[0.05, 0.05, 0.05]} />
-                <ArmorMaterial color="#111" />
-             </mesh>
-             <mesh position={[0, 0, 0.03]}>
-                <circleGeometry args={[0.01, 16]} />
-                <GlowMaterial intensity={0.5} />
-             </mesh>
-         </group>
-         {/* Respirator */}
-         <mesh position={[0, -0.12, 0.15]} rotation={[-0.1, 0, 0]}>
-            <boxGeometry args={[0.22, 0.15, 0.1]} />
-            <MainMaterial />
-         </mesh>
-      </group>
+  // --- ROGUE GEOMETRY ---
+  const RenderRogue = () => (
+    <group position={[0, 0.85, 0]}>
+       {/* Head - Cyber Ninja */}
+       <group position={[0, 1.0, 0]}>
+          <mesh castShadow>
+             <sphereGeometry args={[0.22, 16, 16]} />
+             <FabricMat color="#151515" />
+          </mesh>
+          {/* Tactical Visor Cluster */}
+          <group position={[0, 0.05, 0.18]}>
+              <mesh position={[0, 0, 0]}>
+                  <boxGeometry args={[0.15, 0.08, 0.05]} />
+                  <ArmorMat color="#333" />
+              </mesh>
+              {/* Tri-eye lens */}
+              <mesh position={[0, 0, 0.03]}>
+                  <circleGeometry args={[0.02]} />
+                  <GlowMat intensity={2} />
+              </mesh>
+              <mesh position={[0.06, 0, 0.03]}>
+                  <circleGeometry args={[0.015]} />
+                  <GlowMat intensity={1.5} />
+              </mesh>
+               <mesh position={[-0.06, 0, 0.03]}>
+                  <circleGeometry args={[0.015]} />
+                  <GlowMat intensity={1.5} />
+              </mesh>
+          </group>
+          {/* Scarf / Mask */}
+          <mesh position={[0, -0.15, 0.05]}>
+              <cylinderGeometry args={[0.23, 0.25, 0.2, 12]} />
+              <FabricMat color="#111" />
+          </mesh>
+       </group>
 
-      {/* --- SCARF --- */}
-      <group position={[0, 0.72, 0]}>
-         <mesh rotation={[0.2, 0, 0]}>
-             <torusGeometry args={[0.2, 0.08, 12, 32]} />
-             <meshStandardMaterial color={data.color} roughness={0.8} />
-         </mesh>
-         {/* Flowing tails */}
-         <mesh position={[0.15, -0.2, -0.2]} rotation={[-0.2, 0, -0.2]}>
-             <boxGeometry args={[0.15, 0.6, 0.02]} />
-             <MainMaterial />
-         </mesh>
-      </group>
+       {/* Torso & Tech Backpack */}
+       <group position={[0, 0.4, 0]}>
+           <mesh castShadow>
+              <cylinderGeometry args={[0.2, 0.25, 0.55]} />
+              <FabricMat color="#222" />
+           </mesh>
+           <mesh position={[0, 0.1, 0.15]}>
+              <boxGeometry args={[0.3, 0.3, 0.1]} />
+              <ArmorMat color="#0a0a0a" />
+           </mesh>
+           {/* Backpack */}
+           <mesh position={[0, 0.15, -0.2]}>
+              <boxGeometry args={[0.35, 0.45, 0.15]} />
+              <TechDetailMat color="#333" />
+           </mesh>
+           {/* Antenna */}
+           <mesh position={[0.15, 0.4, -0.2]}>
+              <cylinderGeometry args={[0.005, 0.005, 0.3]} />
+              <meshBasicMaterial color="#555" />
+           </mesh>
+       </group>
 
-      {/* --- TORSO --- */}
-      <group position={[0, 0.35, 0]}>
-         <mesh castShadow>
-            <cylinderGeometry args={[0.15, 0.25, 0.6, 8]} />
-            <SkinMaterial />
-         </mesh>
-         {/* Tactical Vest */}
-         <mesh position={[0, 0.1, 0]}>
-             <cylinderGeometry args={[0.2, 0.22, 0.35, 8]} />
-             <ArmorMaterial />
-         </mesh>
-         {/* Straps/Pouches */}
-         <mesh position={[0, -0.15, 0.18]}>
-            <boxGeometry args={[0.3, 0.1, 0.1]} />
-            <ArmorMaterial color="#333" />
-         </mesh>
-         <mesh position={[0, -0.15, -0.18]}>
-            <boxGeometry args={[0.3, 0.1, 0.1]} />
-            <ArmorMaterial color="#333" />
-         </mesh>
-      </group>
+       {/* Limbs - Sleek & Segmented */}
+       {[ -1, 1 ].map((side) => (
+           <group key={side} position={[side * 0.45, 0.5, 0]}>
+              {/* Asymmetrical Shoulder (Left has armor) */}
+              {side === -1 && (
+                 <mesh position={[0, 0.1, 0]}>
+                    <coneGeometry args={[0.15, 0.3, 4]} />
+                    <ArmorMat color="#222" />
+                 </mesh>
+              )}
+              {/* Arm */}
+              <mesh position={[0, -0.3, 0]} castShadow>
+                 <cylinderGeometry args={[0.06, 0.05, 0.45]} />
+                 <FabricMat />
+              </mesh>
+              {/* Gauntlet */}
+              <mesh position={[0, -0.6, 0]}>
+                 <cylinderGeometry args={[0.07, 0.06, 0.3]} />
+                 <ArmorMat color="#151515" />
+              </mesh>
+              {/* Hand */}
+              <mesh position={[0, -0.85, 0]}>
+                 <boxGeometry args={[0.1, 0.1, 0.1]} />
+                 <FabricMat />
+              </mesh>
+              
+              {/* Legs */}
+              <group position={[side * -0.2, -1.0, 0]}>
+                 <mesh position={[0, 0.2, 0]}>
+                    <cylinderGeometry args={[0.1, 0.08, 0.5]} />
+                    <FabricMat color="#1a1a1a" />
+                 </mesh>
+                 <mesh position={[0, -0.4, 0]} castShadow>
+                    <cylinderGeometry args={[0.08, 0.06, 0.5]} />
+                    <ArmorMat color="#111" />
+                 </mesh>
+                 {/* Ninja Feet */}
+                 <mesh position={[0, -0.7, 0.1]}>
+                    <boxGeometry args={[0.1, 0.1, 0.25]} />
+                    <FabricMat />
+                 </mesh>
+              </group>
+           </group>
+       ))}
 
-      {/* --- LIMBS --- */}
-      <group position={[0, 0.1, 0]}>
-        {/* Shoulders */}
-        <mesh position={[-0.32, 0.5, 0]} rotation={[0, 0, 0.1]}>
-           <sphereGeometry args={[0.12]} />
-           <MainMaterial />
-        </mesh>
-         <mesh position={[0.32, 0.5, 0]} rotation={[0, 0, -0.1]}>
-           <sphereGeometry args={[0.12]} />
-           <MainMaterial />
-        </mesh>
-
-        {/* Arms */}
-        <mesh position={[-0.35, 0.2, 0]} rotation={[0, 0, 0.2]} castShadow>
-           <cylinderGeometry args={[0.07, 0.06, 0.45]} />
-           <SkinMaterial />
-        </mesh>
-        {/* Forearm Armor */}
-        <mesh position={[-0.45, -0.05, 0.1]} rotation={[0.3, 0.2, 0]} castShadow>
-           <boxGeometry args={[0.12, 0.3, 0.12]} />
-           <MainMaterial />
-        </mesh>
-
-        <mesh position={[0.35, 0.2, 0]} rotation={[0, 0, -0.2]} castShadow>
-           <cylinderGeometry args={[0.07, 0.06, 0.45]} />
-           <SkinMaterial />
-        </mesh>
-        <mesh position={[0.45, -0.05, 0.1]} rotation={[0.3, -0.2, 0]} castShadow>
-           <boxGeometry args={[0.12, 0.3, 0.12]} />
-           <MainMaterial />
-        </mesh>
-
-        {/* Legs - Deep Crouch */}
-        <group position={[0, -0.4, 0]}>
-             {/* Left Leg */}
-             <group position={[-0.2, 0, 0.2]} rotation={[-0.5, 0, -0.1]}>
-                <mesh position={[0, 0.2, 0]}>
-                   <cylinderGeometry args={[0.12, 0.1, 0.5]} />
-                   <SkinMaterial />
-                </mesh>
-                <mesh position={[0, 0.2, 0.12]}>
-                   <boxGeometry args={[0.15, 0.3, 0.05]} />
-                   <ArmorMaterial />
-                </mesh>
-                <mesh position={[0, -0.1, 0.1]} rotation={[0.8, 0, 0]}>
-                   <cylinderGeometry args={[0.09, 0.07, 0.6]} />
-                   <ArmorMaterial />
-                </mesh>
-             </group>
-             {/* Right Leg */}
-             <group position={[0.2, 0, -0.2]} rotation={[0.5, 0, 0.1]}>
-                <mesh position={[0, 0.2, 0]}>
-                   <cylinderGeometry args={[0.12, 0.1, 0.5]} />
-                   <SkinMaterial />
-                </mesh>
-                <mesh position={[0, 0.2, 0.12]}>
-                   <boxGeometry args={[0.15, 0.3, 0.05]} />
-                   <ArmorMaterial />
-                </mesh>
-                <mesh position={[0, -0.1, 0.1]} rotation={[0.2, 0, 0]}>
-                   <cylinderGeometry args={[0.09, 0.07, 0.6]} />
-                   <ArmorMaterial />
-                </mesh>
-             </group>
-        </group>
-      </group>
-
-      {/* --- WEAPONS: TWIN ENERGY DAGGERS --- */}
-      <group>
-         {/* Dagger Left */}
-         <group position={[-0.6, 0.4, 0.5]} rotation={[1.8, 0.2, 0]}>
-             <mesh position={[0, -0.2, 0]}>
-                <cylinderGeometry args={[0.02, 0.02, 0.2]} />
-                <SkinMaterial />
-             </mesh>
-             <mesh position={[0, 0, 0]}>
-                <boxGeometry args={[0.08, 0.04, 0.04]} />
-                <ArmorMaterial />
-             </mesh>
-            <mesh position={[0, 0.3, 0]}>
-               <coneGeometry args={[0.04, 0.6, 4]} />
-               <MainMaterial />
-            </mesh>
-            <mesh position={[0, 0.3, 0]}>
-               <coneGeometry args={[0.02, 0.62, 4]} />
-               <GlowMaterial intensity={1.5} />
-            </mesh>
-            <Trail width={0.4} length={4} color={data.color} attenuation={(t) => t * t}>
-                <mesh position={[0, 0.6, 0]}>
-                   <sphereGeometry args={[0.01]} />
-                   <meshBasicMaterial color={data.color} />
-                </mesh>
-            </Trail>
-         </group>
-
-         {/* Dagger Right */}
-         <group position={[0.6, 0.4, 0.5]} rotation={[1.8, -0.2, 0]}>
-              <mesh position={[0, -0.2, 0]}>
-                <cylinderGeometry args={[0.02, 0.02, 0.2]} />
-                <SkinMaterial />
-             </mesh>
-             <mesh position={[0, 0, 0]}>
-                <boxGeometry args={[0.08, 0.04, 0.04]} />
-                <ArmorMaterial />
-             </mesh>
-            <mesh position={[0, 0.3, 0]}>
-               <coneGeometry args={[0.04, 0.6, 4]} />
-               <MainMaterial />
-            </mesh>
-             <mesh position={[0, 0.3, 0]}>
-               <coneGeometry args={[0.02, 0.62, 4]} />
-               <GlowMaterial intensity={1.5} />
-            </mesh>
-             <Trail width={0.4} length={4} color={data.color} attenuation={(t) => t * t}>
-                <mesh position={[0, 0.6, 0]}>
-                   <sphereGeometry args={[0.01]} />
-                   <meshBasicMaterial color={data.color} />
-                </mesh>
-            </Trail>
-         </group>
-      </group>
+       {/* Weapons: Curved Energy Katanas */}
+       <group>
+           {[-1, 1].map((side) => (
+               <group key={side} position={[side * 0.7, 0.2, 0.4]} rotation={[1.2, side * 0.5, 0]}>
+                   <mesh position={[0, -0.3, 0]}>
+                      <cylinderGeometry args={[0.02, 0.02, 0.2]} />
+                      <TechDetailMat />
+                   </mesh>
+                   <mesh position={[0, 0.4, 0]}>
+                      <boxGeometry args={[0.04, 1.2, 0.01]} />
+                      <meshBasicMaterial ref={side === -1 ? rogueBladeRef1 : rogueBladeRef2} color={data.color} toneMapped={false} />
+                   </mesh>
+                   {/* Trail Effect */}
+                   <Trail width={0.4} length={3} color={data.color} attenuation={(t) => t * t}>
+                       <mesh position={[0, 1.0, 0]}>
+                           <sphereGeometry args={[0.01]} />
+                           <meshBasicMaterial color={data.color} />
+                       </mesh>
+                   </Trail>
+               </group>
+           ))}
+       </group>
     </group>
   );
 
   const getModel = () => {
     switch(data.id) {
-      case 'WARRIOR': return renderWarrior();
-      case 'MAGE': return renderMage();
-      case 'ROGUE': return renderRogue();
+      case 'WARRIOR': return <RenderWarrior />;
+      case 'MAGE': return <RenderMage />;
+      case 'ROGUE': return <RenderRogue />;
       default: return <boxGeometry />;
     }
   };
@@ -681,16 +460,20 @@ const CharacterModel: React.FC<CharacterModelProps> = ({ data, isSelected, onSel
       ref={groupRef}
       onClick={(e) => {
         e.stopPropagation();
+        audioService.playSelectSound();
         onSelect(data.id);
       }}
-      onPointerOver={() => setHovered(true)}
+      onPointerOver={() => {
+        setHovered(true);
+        if (!isSelected) audioService.playHoverSound();
+      }}
       onPointerOut={() => setHovered(false)}
     >
       {getModel()}
       
-      {/* Floating Holographic Label */}
+      {/* Holographic Nameplate */}
       <Text
-        position={[0, 2.5, 0]}
+        position={[0, 2.8, 0]}
         fontSize={0.25}
         font="https://fonts.gstatic.com/s/orbitron/v25/yMJRMI8Te0tu12thOvpL6ze_.woff"
         color={isSelected ? '#ffffff' : data.color}
@@ -702,22 +485,18 @@ const CharacterModel: React.FC<CharacterModelProps> = ({ data, isSelected, onSel
         {data.name}
       </Text>
       
-      {/* Digital Selection Ring */}
+      {/* Selection Base */}
       {isSelected && (
-        <group position={[0, -0.95, 0]}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.8, 0.9, 32]} />
-            <meshBasicMaterial color={data.color} transparent opacity={0.6} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh rotation={[-Math.PI / 2, 0, 0]}>
-             <ringGeometry args={[1.0, 1.02, 32]} />
-             <meshBasicMaterial color="#fff" transparent opacity={0.3} side={THREE.DoubleSide} />
-          </mesh>
-          {/* Vertical light beam */}
-          <mesh position={[0, 1, 0]}>
-             <cylinderGeometry args={[0.8, 0.8, 2, 32, 1, true]} />
-             <meshBasicMaterial color={data.color} transparent opacity={0.1} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
-          </mesh>
+        <group position={[0, -0.98, 0]}>
+           <mesh rotation={[-Math.PI/2, 0, 0]}>
+              <ringGeometry args={[0.8, 0.85, 64]} />
+              <meshBasicMaterial color={data.color} transparent opacity={0.8} />
+           </mesh>
+           <mesh rotation={[-Math.PI/2, 0, 0]}>
+              <ringGeometry args={[1.1, 1.11, 64]} />
+              <meshBasicMaterial color="#fff" transparent opacity={0.3} />
+           </mesh>
+           <Sparkles count={20} scale={2} size={2} speed={0.4} opacity={0.5} color={data.color} />
         </group>
       )}
     </group>
